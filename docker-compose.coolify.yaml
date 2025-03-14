@@ -14,9 +14,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
-    labels:
-      coolify.deployment.type: "buildpack"
-      coolify.deployment.service: "server"
 
   # Frontend client
   client:
@@ -34,6 +31,3 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
-    labels:
-      coolify.deployment.type: "buildpack"
-      coolify.deployment.service: "client"
