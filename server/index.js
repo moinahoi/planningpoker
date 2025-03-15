@@ -14,7 +14,7 @@ const io = new Server(server, {
     origin: '*', // In production, restrict this to your frontend URL
     methods: ['GET', 'POST']
   },
-  path: '/api/socket.io' // Set the base path
+  path: '/socket.io' // Set the base path
 });
 
 const PORT = process.env.PORT || 8000; // Changed default port from 5000 to 8000
