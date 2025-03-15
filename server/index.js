@@ -25,7 +25,7 @@ const games = {};
 const validCards = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, '?', '☕'];
 
 // Create a new game
-app.post('/api/games', (req, res) => {
+app.post('/games', (req, res) => {
   const gameId = nanoid(6); // Generate a short, unique game ID
   
   games[gameId] = {
