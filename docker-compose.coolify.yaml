@@ -5,7 +5,6 @@ services:
       context: ./server
       dockerfile: Dockerfile
     environment:
-      - PORT=${PORT:-8000}
       - NODE_ENV=production
     restart: unless-stopped
     healthcheck:
@@ -23,8 +22,6 @@ services:
     depends_on:
       - server
     restart: unless-stopped
-    environment:
-      - SERVER_URL=${SERVER_URL:-http://server:8000}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
       interval: 10s
