@@ -39,12 +39,12 @@ app.post('/api/games', (req, res) => {
 });
 
 // Health check endpoint for Coolify
-app.get('/api/health', (req, res) => {
+app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
 // Get game status
-app.get('/api/games/:gameId', (req, res) => {
+app.get('/games/:gameId', (req, res) => {
   const { gameId } = req.params;
   const game = games[gameId];
   
