@@ -57,7 +57,8 @@ const GameRoom = () => {
       }
 
       // Initialize socket
-      const newSocket = io('/api/', {
+      const newSocket = io('/', {
+        path: '/api/socket.io',
         query: { gameId },
       })
 
