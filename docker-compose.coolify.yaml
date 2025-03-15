@@ -1,6 +1,6 @@
 services:
   # Backend server
-  server:
+  backend:
     build:
       context: ./server
       dockerfile: Dockerfile
@@ -15,12 +15,10 @@ services:
       start_period: 5s
 
   # Frontend client
-  client:
+  frontend:
     build:
       context: ./client
       dockerfile: Dockerfile
-    # depends_on:
-    #   server
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:80 || exit 1"]
