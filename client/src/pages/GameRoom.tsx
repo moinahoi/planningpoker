@@ -79,12 +79,15 @@ const GameRoom = () => {
         const playerId = newSocket.id
         if (playerId && updatedGameState.players) {
           const player = updatedGameState.players[playerId]
-          if (player && player.card !== null && player.card !== true) {
-            console.log('Updating selected card from server:', player.card)
-            setSelectedCard(player.card)
-          } else {
-            console.log('Resetting selected card to null')
-            setSelectedCard(null)
+          if (player) {
+            if (player.card !== null && player.card !== true) {
+              console.log('Updating selected card from server:', player.card)
+              setSelectedCard(player.card)
+            } else if (player.card === null) {
+              console.log('Resetting selected card to null')
+              setSelectedCard(null)
+            }
+            // Keep the current selection if player.card === true (card is selected but hidden)
           }
         }
       })
