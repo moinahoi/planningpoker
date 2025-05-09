@@ -316,10 +316,7 @@ const GameRoom = () => {
                       'border-blue-500 bg-blue-500 text-white'
                     }`}
                   >
-                    {/* Show actual card value if it's the current player's card OR if the game is revealed */}
-                    {player.id === currentPlayer?.id && player.card !== null && player.card !== true ? (
-                      <span className="text-lg font-bold">{player.card}</span>
-                    ) : gameState.revealed && player.card !== null && player.card !== true ? (
+                    {gameState.revealed && player.card !== null && player.card !== true ? (
                       <span className="text-lg font-bold">{player.card}</span>
                     ) : (
                       <span className="text-xs font-medium">?</span>
