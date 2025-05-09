@@ -1,6 +1,6 @@
 services:
   # Backend server
-  server:
+  backend:
     build:
       context: ./server
       dockerfile: Dockerfile
@@ -15,12 +15,14 @@ services:
       - /app/node_modules
 
   # Frontend client
-  client:
+  frontend:
     build:
       context: ./client
       dockerfile: Dockerfile
     ports:
       - "3000:80"
+    environment:
+      - DEPLOYMENT_ENV=localhost
     depends_on:
-      - server
+      - backend
     restart: unless-stopped

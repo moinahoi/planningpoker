@@ -19,6 +19,8 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+    environment:
+      - DEPLOYMENT_ENV=production
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://frontend:80"]
