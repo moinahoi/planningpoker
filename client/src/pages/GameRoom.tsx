@@ -31,7 +31,7 @@ const GameRoom = () => {
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [isConnecting, setIsConnecting] = useState(true)
-  const [countdown, setCountdown] = useState<number | null>(null)
+  // Removed unused countdown state variable as we use gameState.countdown
 
   // Initialize socket connection and join game
   useEffect(() => {
