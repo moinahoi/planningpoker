@@ -30,6 +30,7 @@ function App() {
     <div className="min-h-screen bg-gray-50">
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/invite/:gameId" element={<HomePage />} />
         <Route path="/game/:gameId" element={<GameRoom />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

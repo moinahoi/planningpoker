@@ -130,7 +130,7 @@ const GameRoom = () => {
 
   // Copy game link to clipboard
   const copyGameLink = () => {
-    const link = `${window.location.origin}/game/${gameId}`
+    const link = `${window.location.origin}/invite/${gameId}`
     navigator.clipboard.writeText(link)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)

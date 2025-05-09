@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import axios from 'axios'
 
@@ -7,7 +7,6 @@ const HomePage = () => {
   const { gameId: paramGameId } = useParams<{ gameId: string }>()
   const [localGameId, setLocalGameId] = useState(paramGameId || '');
   const [isCreating, setIsCreating] = useState(false)
-  const [isJoining, setIsJoining] = useState(false)
   const [playerName, setPlayerName] = useState('')
   const [error, setError] = useState('')
 
@@ -55,6 +54,14 @@ const HomePage = () => {
     navigate(`/game/${localGameId}`)
   }
 
+  // Auto-join if user has a stored name and gameId is in URL
+  useEffect(() => {
+    if (paramGameId && localStorage.getItem('playerName')) {
+      // User has an existing session and is accessing via invite link
+      navigate(`/game/${paramGameId}`)
+    }
+  }, [paramGameId, navigate])
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -63,6 +70,12 @@ const HomePage = () => {
           <p className="text-gray-600">Estimate user stories with your team</p>
         </div>
 
+        {paramGameId && (
+          <div className="mb-4 rounded-md bg-blue-50 p-4 text-blue-700">
+            <p>You've been invited to join a planning poker session!</p>
+          </div>
+        )}
+
         {error && (
           <div className="mb-4 rounded-md bg-red-50 p-4 text-red-700">
             <p>{error}</p>
@@ -70,65 +83,69 @@ const HomePage = () => {
         )}
 
         <div className="rounded-lg bg-white p-6 shadow-md">
-          <div className="mb-6">
-            <label htmlFor="playerName" className="mb-2 block font-medium text-gray-700">
-              Your Name
-            </label>
-            <input
-              type="text"
-              id="playerName"
-              className="input w-full"
-              placeholder="Enter your name"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              required
-            />
-          </div>
+          <form onSubmit={handleJoinGame}>
+            {/* Name Field */}
+            <div className="mb-6">
+              <label htmlFor="playerName" className="mb-2 block font-medium text-gray-700">
+                Your Name
+              </label>
+              <input
+                type="text"
+                id="playerName"
+                className="input w-full"
+                placeholder="Enter your name"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                required
+              />
+            </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <button
-                onClick={() => setIsJoining(true)}
-                className="btn btn-secondary w-full"
-                disabled={isCreating}
-              >
-                Join Game
-              </button>
+            {/* Game ID Field */}
+            <div className="mb-6">
+              <label htmlFor="gameId" className="mb-2 block font-medium text-gray-700">
+                Game ID
+              </label>
+              <input
+                type="text"
+                id="gameId"
+                className="input w-full"
+                placeholder="Enter game ID"
+                value={localGameId}
+                onChange={(e) => setLocalGameId(e.target.value)}
+                required={!isCreating}
+                readOnly={!!paramGameId}
+              />
             </div>
-            <div>
-              <button
-                onClick={handleCreateGame}
-                className="btn btn-primary w-full"
-                disabled={isCreating || isJoining}
-              >
-                {isCreating ? 'Creating...' : 'Create Game'}
-              </button>
-            </div>
-          </div>
 
-          {isJoining && (
-            <div className="mt-6">
-              <form onSubmit={handleJoinGame}>
-                <div className="mb-4">
-                  <label htmlFor="gameId" className="mb-2 block font-medium text-gray-700">
-                    Game ID
-                  </label>
-                  <input
-                    type="text"
-                    id="gameId"
-                    className="input w-full"
-                    placeholder="Enter game ID"
-                    value={localGameId}
-                    onChange={(e) => setLocalGameId(e.target.value)}
-                    required
-                  />
-                </div>
-                <button type="submit" className="btn btn-primary w-full">
-                  Join
-                </button>
-              </form>
+            {/* Join Game Button */}
+            <button
+              type="submit"
+              className="btn btn-primary w-full mb-6"
+              disabled={isCreating}
+            >
+              {paramGameId ? 'Join This Game' : 'Join Game'}
+            </button>
+
+            {/* Divider */}
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="bg-white px-2 text-gray-500">or</span>
+              </div>
             </div>
-          )}
+
+            {/* Create Game Button */}
+            <button
+              type="button"
+              onClick={handleCreateGame}
+              className="btn btn-secondary w-full"
+              disabled={isCreating}
+            >
+              {isCreating ? 'Creating...' : 'Create New Game'}
+            </button>
+          </form>
         </div>
       </div>
     </div>
