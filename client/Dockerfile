@@ -21,7 +21,7 @@ FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 
 # Copy custom nginx config
-ARG DEPLOYMENT_ENV
+ARG DEPLOYMENT_ENV=localhost
 COPY nginx.${DEPLOYMENT_ENV}.conf /etc/nginx/conf.d/default.conf
 
 # Expose port 80

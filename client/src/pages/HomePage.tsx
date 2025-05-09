@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import axios from 'axios'
 
 const HomePage = () => {
   const navigate = useNavigate()
+  const { gameId: paramGameId } = useParams<{ gameId: string }>()
+  const [localGameId, setLocalGameId] = useState(paramGameId || '');
   const [isCreating, setIsCreating] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
-  const [gameId, setGameId] = useState('')
   const [playerName, setPlayerName] = useState('')
   const [error, setError] = useState('')
 
@@ -37,7 +38,8 @@ const HomePage = () => {
 
   const handleJoinGame = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!gameId.trim()) {
+    const gameIdToUse = localGameId || ''
+    if (!gameIdToUse.trim()) {
       setError('Please enter a game ID')
       return
     }
@@ -50,7 +52,7 @@ const HomePage = () => {
     localStorage.setItem('playerName', playerName)
     
     // Navigate to the game room
-    navigate(`/game/${gameId}`)
+    navigate(`/game/${localGameId}`)
   }
 
   return (
@@ -116,8 +118,8 @@ const HomePage = () => {
                     id="gameId"
                     className="input w-full"
                     placeholder="Enter game ID"
-                    value={gameId}
-                    onChange={(e) => setGameId(e.target.value)}
+                    value={localGameId}
+                    onChange={(e) => setLocalGameId(e.target.value)}
                     required
                   />
                 </div>

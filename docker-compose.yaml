@@ -9,6 +9,7 @@ services:
     environment:
       - PORT=8000
       - NODE_ENV=production
+      - DEPLOYMENT_ENV=localhost
     restart: unless-stopped
     volumes:
       - ./server:/app
