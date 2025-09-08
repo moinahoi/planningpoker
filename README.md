@@ -42,6 +42,12 @@ This application uses WebSockets via Socket.io for real-time communication. Here
 
 ## Setup and Installation
 
+### Docker-Compose
+
+```
+docker compose up
+```
+
 ### Prerequisites
 
 - Node.js (v14 or higher)
