@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { io, Socket } from 'socket.io-client'
 import axios from 'axios'
@@ -31,7 +31,15 @@ const GameRoom = () => {
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [isConnecting, setIsConnecting] = useState(true)
+  const [isSoundEnabled, setIsSoundEnabled] = useState(() => {
+    // Load sound preference from localStorage, default to true
+    const saved = localStorage.getItem('soundEnabled')
+    return saved !== null ? JSON.parse(saved) : true
+  })
   // Removed unused countdown state variable as we use gameState.countdown
+  
+  // Audio ref for Jeopardy theme
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   // Initialize socket connection and join game
   useEffect(() => {
@@ -111,6 +119,58 @@ const GameRoom = () => {
 
     checkGame()
   }, [gameId, navigate])
+
+  // Handle audio playback based on game state
+  useEffect(() => {
+    if (!gameState || !isSoundEnabled) return
+
+    const players = Object.values(gameState.players)
+    const playersWithCards = players.filter(p => p.card !== null)
+    const allPlayersHaveCards = players.length > 0 && playersWithCards.length === players.length
+
+    // Initialize audio element if not already done
+    if (!audioRef.current) {
+      audioRef.current = new Audio('/Jeopardy-theme-song.mp3')
+      audioRef.current.loop = true
+      audioRef.current.volume = 0.3
+    }
+
+    // Start playing when first player picks a card (but not all players have picked)
+    if (playersWithCards.length > 0 && !allPlayersHaveCards && !gameState.revealed) {
+      audioRef.current.play().catch(err => {
+        console.log('Audio playback prevented:', err)
+      })
+    }
+    // Stop playing when all players have picked OR when cards are revealed
+    else if (allPlayersHaveCards || gameState.revealed) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+
+    return () => {
+      // Cleanup audio when component unmounts
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.currentTime = 0
+      }
+    }
+  }, [gameState, isSoundEnabled])
+
+  // Toggle sound and save preference
+  const toggleSound = useCallback(() => {
+    setIsSoundEnabled(prev => {
+      const newValue = !prev
+      localStorage.setItem('soundEnabled', JSON.stringify(newValue))
+      
+      // Stop audio immediately if disabling
+      if (!newValue && audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.currentTime = 0
+      }
+      
+      return newValue
+    })
+  }, [])
 
   // Handle card selection
   const handleCardSelect = useCallback(
@@ -214,12 +274,31 @@ const GameRoom = () => {
               New Game
             </button>
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
               <div className="mr-2 flex h-8 w-8 items-center justify-center rounded-full bg-blue-500 text-white">
                 {playerName.charAt(0).toUpperCase()}
               </div>
               <span className="font-medium">{playerName}</span>
             </div>
+            
+            <button
+              onClick={toggleSound}
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white transition-colors"
+              title={isSoundEnabled ? 'Mute sound' : 'Enable sound'}
+            >
+              {isSoundEnabled ? (
+                // Sound ON icon
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                </svg>
+              ) : (
+                // Sound OFF icon
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                </svg>
+              )}
+            </button>
             
             <button
               onClick={copyGameLink}
