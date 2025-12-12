@@ -158,7 +158,7 @@ const GameRoom = () => {
 
   // Toggle sound and save preference
   const toggleSound = useCallback(() => {
-    setIsSoundEnabled(prev => {
+    setIsSoundEnabled((prev: boolean) => {
       const newValue = !prev
       localStorage.setItem('soundEnabled', JSON.stringify(newValue))
       
