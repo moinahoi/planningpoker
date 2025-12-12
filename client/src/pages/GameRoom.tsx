@@ -135,16 +135,19 @@ const GameRoom = () => {
       audioRef.current.volume = 0.3
     }
 
-    // Start playing when first player picks a card (but not all players have picked)
-    if (playersWithCards.length > 0 && !allPlayersHaveCards && !gameState.revealed) {
+    // Stop playing when:
+    // - countdown starts (gameState.countdown is set)
+    // - all players have picked
+    // - cards are revealed
+    if (gameState.countdown || allPlayersHaveCards || gameState.revealed) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+    // Start playing when first player picks a card (but not all players have picked, no countdown, not revealed)
+    else if (playersWithCards.length > 0 && !allPlayersHaveCards && !gameState.revealed) {
       audioRef.current.play().catch(err => {
         console.log('Audio playback prevented:', err)
       })
-    }
-    // Stop playing when all players have picked OR when cards are revealed
-    else if (allPlayersHaveCards || gameState.revealed) {
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
     }
 
     return () => {
