@@ -1,31 +1,23 @@
-FROM node:26.13.1-alpine3.24 AS build
+# Build once on the native platform: the output is static files for every architecture
+FROM --platform=$BUILDPLATFORM node:26.13.1-alpine3.24 AS build
 
 WORKDIR /app
-
-# Copy package.json and package-lock.json
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci
-
-# Copy the rest of the application
 COPY . .
 
-# Build the application
+# Release version shown in the app (falls back to package.json)
+ARG APP_VERSION
 RUN npm run build
 
-# Production stage
 FROM nginx:alpine
 
-# Copy the build output to replace the default nginx contents
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy custom nginx config
-ARG DEPLOYMENT_ENV=localhost
-COPY nginx.${DEPLOYMENT_ENV}.conf /etc/nginx/conf.d/default.conf
+# The nginx config is picked at container start via DEPLOYMENT_ENV (localhost | production),
+# so one image works for docker compose and Coolify.
+COPY nginx.*.conf /etc/nginx/conf-available/
+COPY --chmod=755 select-nginx-conf.sh /docker-entrypoint.d/40-select-nginx-conf.sh
+ENV DEPLOYMENT_ENV=localhost
 
-# Expose port 80
 EXPOSE 80
-
-# Start Nginx server
-CMD ["nginx", "-g", "daemon off;"]

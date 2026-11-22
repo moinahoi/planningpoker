@@ -159,6 +159,15 @@ test('creating a game requires a name', async ({ page }) => {
   await expect(page).toHaveURL('/')
 })
 
+test('shows the app version on every page', async ({ browser }) => {
+  const version = /^v\d+\.\d+\.\d+/
+  const page = await newUser(browser)
+  await page.goto('/')
+  await expect(page.getByText(version)).toBeVisible()
+  await createGame(page, 'Alice')
+  await expect(page.getByText(version)).toBeVisible()
+})
+
 test('unknown routes redirect home', async ({ page }) => {
   await page.goto('/does/not/exist')
   await expect(page).toHaveURL('/')

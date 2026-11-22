@@ -1,18 +1,14 @@
 FROM node:26.13.1-alpine3.24
 
 WORKDIR /app
-
-# Copy package.json and package-lock.json
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci --omit=dev
-
-# Copy the rest of the application
 COPY . .
 
-# Expose the port the app runs on
-EXPOSE 8000
+# Release version reported by /health (falls back to package.json)
+ARG APP_VERSION
+ENV APP_VERSION=$APP_VERSION NODE_ENV=production
 
-# Command to run the application
+EXPOSE 8000
+USER node
 CMD ["node", "index.js"]

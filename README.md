@@ -53,6 +53,7 @@ Run these from the repository root.
 | `npm run test:e2e` | End-to-end tests in Chromium against the production build |
 | `npm run test:all` | Everything above. Run this after every dependency update |
 | `npm run screenshot` | Regenerate `docs/header.png` from a live 4-player round |
+| `npm run release -- 1.2.0` | Set the version everywhere, commit and tag `v1.2.0` (see [Releases](#releases)) |
 
 Inside `client/`, `npm run lint` runs ESLint.
 
@@ -113,23 +114,46 @@ The server answers every change with `game-updated` (the game state) or `error` 
 ```
 ├── client/                 React 19 + Vite 8 + Tailwind CSS 4 (TypeScript)
 │   ├── src/pages/          HomePage, GameRoom (+ *.test.tsx)
-│   ├── nginx.*.conf        nginx config per DEPLOYMENT_ENV
+│   ├── nginx.*.conf        nginx config per DEPLOYMENT_ENV (picked at start)
 │   └── Dockerfile          build → static files served by nginx
 ├── server/                 Express 5 + Socket.IO 4 (Node.js)
 │   ├── index.js            REST API, socket events, in-memory store
 │   └── index.test.js
 ├── e2e/                    Playwright end-to-end tests
-├── scripts/                README header screenshot
+├── scripts/                release script, README header screenshot
+├── .github/workflows/      CI: tests, GHCR images, GitHub release
 ├── docker-compose.yaml     local stack (nginx proxies /api to the backend)
 └── docker-compose.coolify.yaml
 ```
 
+## Releases
+
+[![CI](https://github.com/moinahoi/planningpoker/actions/workflows/ci.yml/badge.svg)](https://github.com/moinahoi/planningpoker/actions/workflows/ci.yml)
+
+Versions follow [SemVer](https://semver.org). The git tag `vX.Y.Z` is the single source of truth. The version appears in the bottom-right corner of the app and in the server's `/health` response.
+
+```bash
+npm run release -- 1.2.0
+```
+
+```bash
+git push --follow-tags
+```
+
+The [CI workflow](.github/workflows/ci.yml) runs on every push and pull request: lint, unit tests, end-to-end tests, and a Docker build. For a `v*` tag it also:
+
+1. checks that the tag matches all `package.json` versions,
+2. builds multi-arch images (`linux/amd64`, `linux/arm64`) with the version baked in, and pushes them to GHCR as `1.2.0`, `1.2`, `1` and `latest`:
+   - `ghcr.io/moinahoi/planningpoker-server`
+   - `ghcr.io/moinahoi/planningpoker-client`
+3. creates the [GitHub release](https://github.com/moinahoi/planningpoker/releases) with generated notes.
+
 ## Deployment
 
-- **`docker-compose.yaml`** builds both images. nginx (`client/nginx.localhost.conf`) serves the app and proxies `/api/*` to the backend.
-- **`docker-compose.coolify.yaml`** is for [Coolify](https://coolify.io), with health checks. `client/nginx.production.conf` only serves static files, so the platform's proxy must route `/api/*` to the backend on port 8000 and strip the `/api` prefix.
+- **`docker-compose.yaml`** builds both images locally. The client container runs with `DEPLOYMENT_ENV=localhost`, so nginx proxies `/api/*` to the backend.
+- **`docker-compose.coolify.yaml`** runs the prebuilt GHCR images, so Coolify no longer builds anything. Set `APP_VERSION` (e.g. `1.2.0`) in Coolify to pin a release, or leave it empty for `latest`. With `DEPLOYMENT_ENV=production`, nginx only serves static files, so Coolify's proxy must route `/api/*` to the backend on port 8000 and strip the `/api` prefix.
 
-The server keeps all games in memory, so run a single backend instance.
+The client image picks `client/nginx.$DEPLOYMENT_ENV.conf` at container start, so one image serves both setups. The server keeps all games in memory, so run a single backend instance.
 
 ## License
 

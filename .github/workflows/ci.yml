@@ -1,0 +1,130 @@
+name: CI
+
+# Every push / PR: lint, unit + e2e tests, Docker build.
+# Version tags (vX.Y.Z): additionally push images to GHCR and create the GitHub release.
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tag must match package.json versions
+        if: env.IS_RELEASE == 'true'
+        run: |
+          for pkg in package.json server/package.json client/package.json; do
+            version=$(node -p "require('./$pkg').version")
+            if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+              echo "::error file=$pkg::version $version does not match tag $GITHUB_REF_NAME (use npm run release)"
+              exit 1
+            fi
+          done
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: "**/package-lock.json"
+
+      - run: npm ci
+      - run: npm ci --prefix server
+      - run: npm ci --prefix client
+      - run: npm run lint --prefix client
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:all
+        env:
+          CI: true
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
+  images:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [server, client]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        if: env.IS_RELEASE == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}-${{ matrix.service }}
+          # v1.2.3 -> 1.2.3, 1.2, 1, latest
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+          labels: |
+            org.opencontainers.image.title=planningpoker-${{ matrix.service }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: ./${{ matrix.service }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.IS_RELEASE == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: APP_VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY}"
+          cat > notes.md <<EOF
+          ## Docker images
+
+          \`\`\`
+          ${image}-server:${VERSION#v}
+          ${image}-client:${VERSION#v}
+          \`\`\`
+
+          Deploy with \`docker-compose.coolify.yaml\` (set \`APP_VERSION=${VERSION#v}\` to pin this release).
+          EOF
+          gh release create "$VERSION" --verify-tag --title "Planning Poker $VERSION" \
+            --notes-file notes.md --generate-notes

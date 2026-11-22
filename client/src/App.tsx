@@ -11,6 +11,9 @@ function App() {
         <Route path="/game/:gameId" element={<GameRoom />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <p className="pointer-events-none fixed bottom-1 right-2 z-30 text-[10px] text-gray-400/70">
+        v{__APP_VERSION__}
+      </p>
     </div>
   )
 }

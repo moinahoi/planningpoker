@@ -135,7 +135,7 @@ describe("REST API", () => {
   test("GET /health", async () => {
     const res = await fetch(`${baseUrl}/health`);
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { status: "ok" });
+    assert.deepEqual(await res.json(), { status: "ok", version: require("./package.json").version });
   });
 
   test("POST /games creates a 6-char game id", async () => {

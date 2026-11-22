@@ -14,6 +14,8 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 8000;
+// CI bakes the release tag into the image as APP_VERSION
+const VERSION = process.env.APP_VERSION || require("./package.json").version;
 const GAME_TTL_MS = 60 * 60 * 1000;
 const VALID_CARDS = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, "?", "☕"];
 
@@ -33,7 +35,7 @@ app.post("/games", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: "ok", version: VERSION });
 });
 
 app.get("/games/:gameId", (req, res) => {
@@ -182,7 +184,7 @@ setInterval(() => {
 }, GAME_TTL_MS).unref(); // unref: don't keep test processes alive
 
 if (require.main === module) {
-  server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  server.listen(PORT, () => console.log(`Planning Poker server v${VERSION} running on port ${PORT}`));
 }
 
 module.exports = { app, server, io, games, getGameState, calculateAverage };
