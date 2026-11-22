@@ -1,8 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.js";
 
 @layer base {
+  /* v4 defaults borders to currentColor; keep the v3 gray-200 default */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+
   body {
     @apply bg-gray-50 text-gray-900;
   }
@@ -14,7 +22,7 @@
   }
   
   .card-selected {
-    @apply border-primary-500 ring-2 ring-primary-500 ring-opacity-50;
+    @apply border-primary-500 ring-2 ring-primary-500/50;
   }
   
   .btn {
@@ -30,6 +38,6 @@
   }
   
   .input {
-    @apply rounded-md border border-gray-300 px-4 py-2 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-opacity-50;
+    @apply rounded-md border border-gray-300 px-4 py-2 focus:border-primary-500 focus:outline-hidden focus:ring-2 focus:ring-primary-500/50;
   }
 }

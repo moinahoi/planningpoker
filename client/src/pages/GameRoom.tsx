@@ -26,7 +26,7 @@ const GameRoom = () => {
   const navigate = useNavigate()
   const [socket, setSocket] = useState<Socket | null>(null)
   const [gameState, setGameState] = useState<GameState | null>(null)
-  const [playerName, setPlayerName] = useState('')
+  const [playerName] = useState(() => localStorage.getItem('playerName') ?? '')
   const [selectedCard, setSelectedCard] = useState<CardValue | null>(null)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
@@ -54,13 +54,12 @@ const GameRoom = () => {
       navigate('/')
       return
     }
-    setPlayerName(storedName)
 
     // Check if game exists
     const checkGame = async () => {
       try {
         await axios.get(`/api/games/${gameId}`)
-      } catch (err) {
+      } catch {
         setError('Game not found')
         setIsConnecting(false)
         return
