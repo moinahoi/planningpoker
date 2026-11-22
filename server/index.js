@@ -1,34 +1,27 @@
 const express = require("express");
 const http = require("http");
+const crypto = require("crypto");
 const { Server } = require("socket.io");
 const cors = require("cors");
-const { nanoid } = require("nanoid");
 
 const app = express();
 app.use(cors());
-app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*", // In production, restrict this to your frontend URL
-    methods: ["GET", "POST"],
-  },
-  path: "/socket.io", // Set the base path
+  cors: { origin: "*", methods: ["GET", "POST"] }, // restrict to the frontend URL if exposed publicly
+  path: "/socket.io",
 });
 
-const PORT = process.env.PORT || 8000; // Changed default port from 5000 to 8000
+const PORT = process.env.PORT || 8000;
+const GAME_TTL_MS = 60 * 60 * 1000;
+const VALID_CARDS = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, "?", "☕"];
 
-// Store active games
+// In-memory store: gameId -> { id, players: { socketId: { id, name, card } }, revealed, countdown, createdAt }
 const games = {};
 
-// Card values for planning poker (0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, ?, coffee)
-const validCards = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, "?", "☕"];
-
-// Create a new game
 app.post("/games", (req, res) => {
-  const gameId = nanoid(6); // Generate a short, unique game ID
-
+  const gameId = crypto.randomBytes(6).toString("base64url").slice(0, 6);
   games[gameId] = {
     id: gameId,
     players: {},
@@ -36,292 +29,160 @@ app.post("/games", (req, res) => {
     createdAt: Date.now(),
     countdown: null,
   };
-
   res.json({ gameId });
 });
 
-// Health check endpoint for Coolify
 app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok" });
+  res.json({ status: "ok" });
 });
 
-// Get game status
 app.get("/games/:gameId", (req, res) => {
-  const { gameId } = req.params;
-  const game = games[gameId];
-
-  if (!game) {
-    return res.status(404).json({ error: "Game not found" });
-  }
-
-  // Return game data without revealing cards unless the game state is "revealed"
-  const sanitizedPlayers = {};
-  Object.keys(game.players).forEach((playerId) => {
-    const player = game.players[playerId];
-    sanitizedPlayers[playerId] = {
-      ...player,
-      card: game.revealed ? player.card : player.card !== null ? true : null,
-    };
-  });
-
-  res.json({
-    id: game.id,
-    players: sanitizedPlayers,
-    revealed: game.revealed,
-    average: game.revealed ? calculateAverage(game) : null,
-  });
+  const state = getGameState(req.params.gameId);
+  if (!state) return res.status(404).json({ error: "Game not found" });
+  res.json(state);
 });
 
-// Socket.io connection handling
 io.on("connection", (socket) => {
-  console.log("New client connected:", socket.id);
-  let currentGameId = null;
-  let currentPlayer = null;
+  let gameId = null;
+  let playerName = null;
 
-  // Join a game
-  socket.on("join-game", ({ gameId, playerName }) => {
-    // Check if game exists
-    if (!games[gameId]) {
+  const game = () => games[gameId];
+  const broadcast = () => io.to(gameId).emit("game-updated", getGameState(gameId));
+  // The acting player sees their own card; everyone else sees it hidden.
+  const broadcastFrom = () => {
+    socket.emit("game-updated", getGameState(gameId, socket.id));
+    socket.to(gameId).emit("game-updated", getGameState(gameId));
+  };
+  const requireGame = () => {
+    if (game()) return true;
+    socket.emit("error", { message: "Not in an active game" });
+    return false;
+  };
+
+  socket.on("join-game", ({ gameId: requestedId, playerName: name }) => {
+    const target = games[requestedId];
+    if (!target) {
       socket.emit("error", { message: "Game not found" });
       return;
     }
 
-    currentGameId = gameId;
+    gameId = requestedId;
+    playerName = name;
 
-    // Check if a player with the same name already exists in this game
-    const existingPlayerIds = Object.keys(games[gameId].players);
-    const existingPlayerWithSameName = existingPlayerIds.find(
-      (id) =>
-        games[gameId].players[id].name === playerName &&
-        games[gameId].players[id].id !== socket.id
-    );
-
-    if (existingPlayerWithSameName) {
-      // If player with same name exists, remove the old entry
-      delete games[gameId].players[existingPlayerWithSameName];
-      console.log(`Replaced duplicate player ${playerName} in game ${gameId}`);
+    // A reload reconnects with a new socket id: replace the stale entry with the same name.
+    for (const [id, player] of Object.entries(target.players)) {
+      if (player.name === name && id !== socket.id) delete target.players[id];
     }
 
-    currentPlayer = {
-      id: socket.id,
-      name: playerName,
-      card: null,
-    };
-
-    // Add player to the game
-    games[gameId].players[socket.id] = currentPlayer;
-
-    // Join the socket room for this game
+    target.players[socket.id] = { id: socket.id, name, card: null };
     socket.join(gameId);
-
-    // Send personalized game state to the new player
-    socket.emit("game-updated", getGameState(gameId, socket.id));
-
-    // Notify other players in the game about the new player
-    socket.to(gameId).emit("game-updated", getGameState(gameId));
-
-    console.log(`Player ${playerName} joined game ${gameId}`);
+    broadcastFrom();
+    console.log(`Player ${name} joined game ${gameId}`);
   });
 
-  // Player selects a card
   socket.on("select-card", ({ card }) => {
-    if (!currentGameId || !currentPlayer || !games[currentGameId]) {
-      socket.emit("error", { message: "Not in an active game" });
-      return;
-    }
-
-    // Validate card value
-    if (!validCards.includes(card)) {
+    if (!requireGame()) return;
+    if (!VALID_CARDS.includes(card)) {
       socket.emit("error", { message: "Invalid card value" });
       return;
     }
-
-    // Make sure the player exists in the game
-    if (!games[currentGameId].players[socket.id]) {
-      console.log(`Player ${socket.id} not found in game ${currentGameId}`);
+    const player = game().players[socket.id];
+    if (!player) {
       socket.emit("error", { message: "Player not found in game" });
       return;
     }
-
-    // Update player's card
-    games[currentGameId].players[socket.id].card = card;
-
-    // Send personalized game state to the player who selected the card
-    socket.emit("game-updated", getGameState(currentGameId, socket.id));
-
-    // Send game state to other players
-    socket.to(currentGameId).emit("game-updated", getGameState(currentGameId));
-
-    console.log(`Player ${currentPlayer.name} selected card ${card}`);
+    player.card = card;
+    broadcastFrom();
   });
 
-  // Start countdown for all players
   socket.on("start-countdown", () => {
-    if (!currentGameId || !games[currentGameId]) {
-      socket.emit("error", { message: "Not in an active game" });
-      return;
-    }
+    if (!requireGame() || game().countdown) return; // ignore double clicks
 
-    // Start countdown from 3
-    games[currentGameId].countdown = 3;
+    const id = gameId;
+    games[id].countdown = 3;
+    broadcast();
 
-    // Notify all players about countdown start
-    io.to(currentGameId).emit("game-updated", getGameState(currentGameId));
-    console.log(`Countdown started in game ${currentGameId}`);
+    const timer = setInterval(() => {
+      const current = games[id];
+      if (!current) return clearInterval(timer);
 
-    // Countdown from 3 to 1
-    const countdownInterval = setInterval(() => {
-      // Check if game still exists
-      if (!games[currentGameId]) {
-        clearInterval(countdownInterval);
-        return;
+      current.countdown--;
+      if (current.countdown <= 0) {
+        clearInterval(timer);
+        current.countdown = null;
+        current.revealed = true;
       }
-
-      games[currentGameId].countdown--;
-
-      if (games[currentGameId].countdown <= 0) {
-        clearInterval(countdownInterval);
-
-        // Reset countdown
-        games[currentGameId].countdown = null;
-
-        // Reveal cards after countdown finishes
-        games[currentGameId].revealed = true;
-
-        // When starting a new round, everyone sees the same game state
-        io.to(currentGameId).emit("game-updated", getGameState(currentGameId));
-        console.log(`Cards revealed in game ${currentGameId}`);
-      } else {
-        // Update countdown for all players
-        io.to(currentGameId).emit("game-updated", getGameState(currentGameId));
-      }
+      io.to(id).emit("game-updated", getGameState(id));
     }, 1000);
   });
 
-  // Reveal all cards (kept for backward compatibility)
-  socket.on("reveal-cards", () => {
-    if (!currentGameId || !games[currentGameId]) {
-      socket.emit("error", { message: "Not in an active game" });
-      return;
-    }
-
-    games[currentGameId].revealed = true;
-
-    // Calculate and include the average in the game state
-    const gameState = getGameState(currentGameId);
-
-    // Notify all players in the game
-    io.to(currentGameId).emit("game-updated", gameState);
-    console.log(`Cards revealed in game ${currentGameId}`);
-  });
-
-  // Start a new round
   socket.on("new-round", () => {
-    if (!currentGameId || !games[currentGameId]) {
-      socket.emit("error", { message: "Not in an active game" });
-      return;
-    }
-
-    // Reset all cards, revealed state, and countdown
-    games[currentGameId].revealed = false;
-    games[currentGameId].countdown = null;
-    Object.keys(games[currentGameId].players).forEach((playerId) => {
-      games[currentGameId].players[playerId].card = null;
-    });
-
-    // Notify all players in the game
-    io.to(currentGameId).emit("game-updated", getGameState(currentGameId));
-    console.log(`New round started in game ${currentGameId}`);
+    if (!requireGame()) return;
+    const current = game();
+    current.revealed = false;
+    current.countdown = null;
+    for (const player of Object.values(current.players)) player.card = null;
+    broadcast();
   });
 
-  // Handle disconnection
   socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
+    const current = game();
+    if (!current) return;
 
-    if (currentGameId && games[currentGameId]) {
-      // Remove player from the game
-      delete games[currentGameId].players[socket.id];
-
-      // If no players left, clean up the game
-      if (Object.keys(games[currentGameId].players).length === 0) {
-        delete games[currentGameId];
-        console.log(`Game ${currentGameId} removed (no players left)`);
-      } else {
-        // Notify remaining players with personalized game states
-        Object.keys(games[currentGameId].players).forEach((playerId) => {
-          if (io.sockets.sockets.has(playerId)) {
-            io.sockets.sockets
-              .get(playerId)
-              .emit("game-updated", getGameState(currentGameId, playerId));
-          }
-        });
-        console.log(
-          `Player ${
-            currentPlayer?.name || socket.id
-          } left game ${currentGameId}`
-        );
-      }
+    delete current.players[socket.id];
+    const remaining = Object.keys(current.players);
+    if (remaining.length === 0) {
+      delete games[gameId];
+      console.log(`Game ${gameId} removed (no players left)`);
+      return;
     }
+    // Every socket sits in a room named after its id: send each player their own view.
+    for (const id of remaining) io.to(id).emit("game-updated", getGameState(gameId, id));
+    console.log(`Player ${playerName ?? socket.id} left game ${gameId}`);
   });
 });
 
-// Helper function to get sanitized game state
+// Game state as seen by `forPlayerId`: other players' cards stay hidden (true) until revealed.
 function getGameState(gameId, forPlayerId = null) {
   const game = games[gameId];
   if (!game) return null;
 
-  const sanitizedPlayers = {};
-  Object.keys(game.players).forEach((playerId) => {
-    const player = game.players[playerId];
-    sanitizedPlayers[playerId] = {
-      ...player,
-      // If game is revealed, show all cards
-      // If this is the player's own card, show it
-      // Otherwise, just show that a card is selected (true) or not (null)
-      card: game.revealed
-        ? player.card
-        : playerId === forPlayerId
-        ? player.card
-        : player.card !== null
-        ? true
-        : null,
-    };
-  });
+  const players = {};
+  for (const [id, player] of Object.entries(game.players)) {
+    const visible = game.revealed || id === forPlayerId;
+    players[id] = { ...player, card: visible || player.card === null ? player.card : true };
+  }
 
   return {
     id: game.id,
-    players: sanitizedPlayers,
+    players,
     revealed: game.revealed,
     average: game.revealed ? calculateAverage(game) : null,
     countdown: game.countdown,
   };
 }
 
-// Helper function to calculate the average of revealed cards
+// Average of numeric cards, one decimal; "?" and "☕" don't count.
 function calculateAverage(game) {
   const cards = Object.values(game.players)
     .map((player) => player.card)
-    .filter((card) => card !== null && typeof card === "number");
-
+    .filter((card) => typeof card === "number");
   if (cards.length === 0) return null;
-
-  const sum = cards.reduce((acc, card) => acc + card, 0);
-  return (sum / cards.length).toFixed(1);
+  return (cards.reduce((sum, card) => sum + card, 0) / cards.length).toFixed(1);
 }
 
-// Clean up old games periodically (every hour)
 setInterval(() => {
   const now = Date.now();
-  const oneHour = 60 * 60 * 1000;
-
-  Object.keys(games).forEach((gameId) => {
-    if (now - games[gameId].createdAt > oneHour) {
-      delete games[gameId];
-      console.log(`Game ${gameId} removed (expired)`);
+  for (const [id, game] of Object.entries(games)) {
+    if (now - game.createdAt > GAME_TTL_MS) {
+      delete games[id];
+      console.log(`Game ${id} removed (expired)`);
     }
-  });
-}, 60 * 60 * 1000);
+  }
+}, GAME_TTL_MS).unref(); // unref: don't keep test processes alive
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+if (require.main === module) {
+  server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
+
+module.exports = { app, server, io, games, getGameState, calculateAverage };

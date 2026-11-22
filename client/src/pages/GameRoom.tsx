@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router'
 import { io, Socket } from 'socket.io-client'
-import axios from 'axios'
 
-// Define types for our game state
 interface Player {
   id: string
   name: string
@@ -15,7 +13,7 @@ interface GameState {
   players: Record<string, Player>
   revealed: boolean
   average: string | null
-  countdown?: number | null // Add countdown to GameState
+  countdown?: number | null
 }
 
 type CardValue = number | string;
@@ -32,181 +30,91 @@ const GameRoom = () => {
   const [copied, setCopied] = useState(false)
   const [isConnecting, setIsConnecting] = useState(true)
   const [isSoundEnabled, setIsSoundEnabled] = useState(() => {
-    // Load sound preference from localStorage, default to true
     const saved = localStorage.getItem('soundEnabled')
     return saved !== null ? JSON.parse(saved) : true
   })
-  // Removed unused countdown state variable as we use gameState.countdown
-  
-  // Audio ref for Jeopardy theme
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // Initialize socket connection and join game
+  // Check that the game exists, then connect and join. Leaving the room disconnects.
   useEffect(() => {
-    if (!gameId) {
+    if (!gameId || !playerName) {
       navigate('/')
       return
     }
 
-    // Get player name from localStorage or prompt
-    const storedName = localStorage.getItem('playerName')
-    if (!storedName) {
-      navigate('/')
-      return
-    }
+    let cancelled = false
+    let connection: Socket | undefined
 
-    // Check if game exists
-    const checkGame = async () => {
-      try {
-        await axios.get(`/api/games/${gameId}`)
-      } catch {
+    const connect = async () => {
+      const res = await fetch(`/api/games/${gameId}`).catch(() => null)
+      if (cancelled) return
+      if (!res?.ok) {
         setError('Game not found')
         setIsConnecting(false)
         return
       }
 
-      // Initialize socket
-      const newSocket = io('/', {
-        path: '/api/socket.io',
-        query: { gameId },
-      })
+      const s = (connection = io('/', { path: '/api/socket.io', query: { gameId } }))
 
-      newSocket.on('connect', () => {
-        console.log('Connected to server')
+      s.on('connect', () => {
         setIsConnecting(false)
-        
-        // Join the game
-        newSocket.emit('join-game', { gameId, playerName: storedName })
+        s.emit('join-game', { gameId, playerName })
       })
 
-      newSocket.on('game-updated', (updatedGameState: GameState) => {
-        setGameState(updatedGameState)
-        
-        // Update selected card based on game state
-        const playerId = newSocket.id
-        if (playerId && updatedGameState.players) {
-          const player = updatedGameState.players[playerId]
-          if (player) {
-            if (player.card !== null && player.card !== true) {
-              console.log('Updating selected card from server:', player.card)
-              setSelectedCard(player.card)
-            } else if (player.card === null) {
-              console.log('Resetting selected card to null')
-              setSelectedCard(null)
-            }
-            // Keep the current selection if player.card === true (card is selected but hidden)
-          }
-        }
+      s.on('game-updated', (state: GameState) => {
+        setGameState(state)
+        // Sync own selection with the server (e.g. reset on a new round)
+        const own = s.id ? state.players[s.id]?.card : undefined
+        if (own !== undefined && own !== true) setSelectedCard(own)
       })
 
-      newSocket.on('error', (err: { message: string }) => {
-        setError(err.message)
-      })
+      s.on('error', (err: { message: string }) => setError(err.message))
+      s.on('disconnect', () => setError('Disconnected from server. Please refresh the page.'))
 
-      newSocket.on('disconnect', () => {
-        console.log('Disconnected from server')
-        setError('Disconnected from server. Please refresh the page.')
-      })
-
-      setSocket(newSocket)
-
-      // Cleanup on unmount
-      return () => {
-        newSocket.disconnect()
-      }
+      setSocket(s)
     }
 
-    checkGame()
-  }, [gameId, navigate])
-
-  // Handle audio playback based on game state
-  useEffect(() => {
-    if (!gameState || !isSoundEnabled) return
-
-    const players = Object.values(gameState.players)
-    const playersWithCards = players.filter(p => p.card !== null)
-    const allPlayersHaveCards = players.length > 0 && playersWithCards.length === players.length
-
-    // Initialize audio element if not already done
-    if (!audioRef.current) {
-      audioRef.current = new Audio('/Jeopardy-theme-song.mp3')
-      audioRef.current.loop = true
-      audioRef.current.volume = 0.3
-    }
-
-    // Stop playing when:
-    // - countdown starts (gameState.countdown is set)
-    // - all players have picked
-    // - cards are revealed
-    if (gameState.countdown || allPlayersHaveCards || gameState.revealed) {
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-    }
-    // Start playing when first player picks a card (but not all players have picked, no countdown, not revealed)
-    else if (playersWithCards.length > 0 && !allPlayersHaveCards && !gameState.revealed) {
-      audioRef.current.play().catch(err => {
-        console.log('Audio playback prevented:', err)
-      })
-    }
-
+    connect()
     return () => {
-      // Cleanup audio when component unmounts
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.currentTime = 0
-      }
+      cancelled = true
+      connection?.disconnect()
     }
-  }, [gameState, isSoundEnabled])
+  }, [gameId, playerName, navigate])
 
-  // Toggle sound and save preference
-  const toggleSound = useCallback(() => {
-    setIsSoundEnabled((prev: boolean) => {
-      const newValue = !prev
-      localStorage.setItem('soundEnabled', JSON.stringify(newValue))
-      
-      // Stop audio immediately if disabling
-      if (!newValue && audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.currentTime = 0
-      }
-      
-      return newValue
-    })
+  const stopMusic = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    audio.pause()
+    audio.currentTime = 0
   }, [])
 
-  // Handle card selection
-  const handleCardSelect = useCallback(
-    (card: CardValue) => {
-      if (!socket) return
-      
-      // Update local state immediately
-      setSelectedCard(card)
-      
-      // Send to server
-      socket.emit('select-card', { card })
-      
-      console.log('Selected card:', card)
-    },
-    [socket]
-  )
+  // Theme music plays while some, but not all, players have picked a card
+  useEffect(() => {
+    if (!gameState) return
+    const players = Object.values(gameState.players)
+    const picked = players.filter((p) => p.card !== null).length
+    const voting = picked > 0 && picked < players.length && !gameState.countdown && !gameState.revealed
+    if (!isSoundEnabled || !voting) return stopMusic()
 
-  // Handle revealing cards with countdown
-  const handleRevealCards = useCallback(() => {
-    if (!socket) return
-    
-    // Emit start-countdown event to server
-    // This will trigger the countdown for all players
-    socket.emit('start-countdown')
-    
-    // Note: The actual reveal will happen when the server sends back
-    // a game-updated event with revealed=true after the countdown
-  }, [socket])
+    audioRef.current ??= Object.assign(new Audio('/Jeopardy-theme-song.mp3'), { loop: true, volume: 0.3 })
+    audioRef.current.play().catch(() => {}) // browsers may block autoplay
+  }, [gameState, isSoundEnabled, stopMusic])
 
-  // Handle starting a new round
-  const handleNewRound = useCallback(() => {
-    if (!socket) return
-    socket.emit('new-round')
-  }, [socket])
+  useEffect(() => stopMusic, [stopMusic]) // stop when leaving the room
+
+  const toggleSound = () =>
+    setIsSoundEnabled((prev: boolean) => {
+      localStorage.setItem('soundEnabled', JSON.stringify(!prev))
+      return !prev
+    })
+
+  const handleCardSelect = (card: CardValue) => {
+    setSelectedCard(card)
+    socket?.emit('select-card', { card })
+  }
+  // The server counts down 3-2-1 for everyone, then reveals
+  const handleRevealCards = () => socket?.emit('start-countdown')
+  const handleNewRound = () => socket?.emit('new-round')
 
   // Copy game link to clipboard
   const copyGameLink = () => {
@@ -416,7 +324,6 @@ const GameRoom = () => {
             );
           })}
           
-          {/* Results display moved to overlay */}
         </div>
 
         {/* Results Overlay - Only shown when cards are revealed */}
@@ -462,7 +369,6 @@ const GameRoom = () => {
               </div>
             </div>
             
-            {/* No actions needed here since we have the button in the center of the table */}
           </div>
         </div>
       </main>

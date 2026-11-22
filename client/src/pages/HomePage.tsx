@@ -1,32 +1,36 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import axios from 'axios'
+import { useNavigate, useParams } from 'react-router'
 
 const HomePage = () => {
   const navigate = useNavigate()
+  // Set when opened via an invite link (/invite/:gameId)
   const { gameId: paramGameId } = useParams<{ gameId: string }>()
-  const [localGameId, setLocalGameId] = useState(paramGameId || '');
   const [isCreating, setIsCreating] = useState(false)
   const [playerName, setPlayerName] = useState('')
   const [error, setError] = useState('')
 
+  // The game room reads the name from localStorage.
+  const enterGame = (gameId: string) => {
+    localStorage.setItem('playerName', playerName)
+    navigate(`/game/${gameId}`)
+  }
+
+  const nameMissing = () => {
+    if (playerName.trim()) return false
+    setError('Please enter your name')
+    return true
+  }
+
   const handleCreateGame = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!playerName.trim()) {
-      setError('Please enter your name')
-      return
-    }
+    if (nameMissing()) return
 
     try {
       setIsCreating(true)
-      const response = await axios.post('/api/games')
-      const { gameId } = response.data
-      
-      // Store player name in localStorage
-      localStorage.setItem('playerName', playerName)
-      
-      // Navigate to the game room
-      navigate(`/game/${gameId}`)
+      const res = await fetch('/api/games', { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const { gameId } = await res.json()
+      enterGame(gameId)
     } catch (err) {
       setError('Failed to create game. Please try again.')
       console.error(err)
@@ -37,27 +41,12 @@ const HomePage = () => {
 
   const handleJoinGame = (e: React.FormEvent) => {
     e.preventDefault()
-    const gameIdToUse = localGameId || ''
-    if (!gameIdToUse.trim()) {
-      setError('Please enter a game ID')
-      return
-    }
-    if (!playerName.trim()) {
-      setError('Please enter your name')
-      return
-    }
-
-    // Store player name in localStorage
-    localStorage.setItem('playerName', playerName)
-    
-    // Navigate to the game room
-    navigate(`/game/${localGameId}`)
+    if (!nameMissing() && paramGameId) enterGame(paramGameId)
   }
 
-  // Auto-join if user has a stored name and gameId is in URL
+  // Returning players (name already stored) skip the form on invite links
   useEffect(() => {
     if (paramGameId && localStorage.getItem('playerName')) {
-      // User has an existing session and is accessing via invite link
       navigate(`/game/${paramGameId}`)
     }
   }, [paramGameId, navigate])
@@ -66,7 +55,7 @@ const HomePage = () => {
     <div className="flex min-h-screen flex-col items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="mb-2 text-4xl font-bold text-primary-600">Planning Poker</h1>
+          <h1 className="mb-2 text-4xl font-bold text-sky-600">Planning Poker</h1>
           <p className="text-gray-600">Estimate user stories with your team</p>
         </div>
 
@@ -112,10 +101,8 @@ const HomePage = () => {
                   id="gameId"
                   className="input w-full"
                   placeholder="Enter game ID"
-                  value={localGameId}
-                  onChange={(e) => setLocalGameId(e.target.value)}
-                  required
-                  readOnly={!!paramGameId}
+                  value={paramGameId}
+                  readOnly
                 />
               </div>
 
