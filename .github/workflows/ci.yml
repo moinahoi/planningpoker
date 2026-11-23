@@ -1,7 +1,7 @@
 name: CI
 
-# Every push / PR: lint, unit + e2e tests, Docker build.
-# Version tags (vX.Y.Z): additionally push images to GHCR and create the GitHub release.
+# Every push / PR: lint, unit + e2e tests and Docker builds (in parallel).
+# Version tags (vX.Y.Z): additionally publish the images to GHCR and create the GitHub release.
 on:
   push:
     branches: [main]
@@ -57,8 +57,9 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  # Builds in parallel with the tests. Releases push only a staging tag (sha-<commit>);
+  # the release tags are added by `publish` once the tests have passed.
   images:
-    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -68,7 +69,6 @@ jobs:
         service: [server, client]
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4
@@ -82,29 +82,61 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}-${{ matrix.service }}
-          # v1.2.3 -> 1.2.3, 1.2, 1, latest
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha
+          tags: type=semver,pattern={{version}}
           labels: |
             org.opencontainers.image.title=planningpoker-${{ matrix.service }}
 
       - uses: docker/build-push-action@v7
         with:
           context: ./${{ matrix.service }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64 # the Coolify host is x86
           push: ${{ env.IS_RELEASE == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ghcr.io/${{ github.repository }}-${{ matrix.service }}:sha-${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: APP_VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
+  # Tested release: tag the staged image as X.Y.Z, X.Y, X and latest (no rebuild).
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [server, client]
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}-${{ matrix.service }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Add release tags to the staged image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}-${{ matrix.service }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          args=()
+          for tag in $TAGS; do args+=(-t "$tag"); done
+          docker buildx imagetools create "${args[@]}" "$IMAGE:sha-$GITHUB_SHA"
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: images
+    needs: publish
     runs-on: ubuntu-latest
     permissions:
       contents: write

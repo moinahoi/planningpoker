@@ -140,13 +140,14 @@ npm run release -- 1.2.0
 git push --follow-tags
 ```
 
-The [CI workflow](.github/workflows/ci.yml) runs on every push and pull request: lint, unit tests, end-to-end tests, and a Docker build. For a `v*` tag it also:
+The [CI workflow](.github/workflows/ci.yml) runs on every push and pull request: lint, unit tests and end-to-end tests, with the Docker builds running in parallel. For a `v*` tag it also:
 
 1. checks that the tag matches all `package.json` versions,
-2. builds multi-arch images (`linux/amd64`, `linux/arm64`) with the version baked in, and pushes them to GHCR as `1.2.0`, `1.2`, `1` and `latest`:
+2. builds `linux/amd64` images with the version baked in and stages them in GHCR as `sha-<commit>`,
+3. once all tests pass, tags the staged images as `1.2.0`, `1.2`, `1` and `latest`, without rebuilding them:
    - `ghcr.io/moinahoi/planningpoker-server`
    - `ghcr.io/moinahoi/planningpoker-client`
-3. creates the [GitHub release](https://github.com/moinahoi/planningpoker/releases) with generated notes.
+4. creates the [GitHub release](https://github.com/moinahoi/planningpoker/releases) with generated notes.
 
 ## Deployment
 

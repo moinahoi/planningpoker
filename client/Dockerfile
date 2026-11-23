@@ -10,7 +10,8 @@ COPY . .
 ARG APP_VERSION
 RUN npm run build
 
-FROM nginx:alpine
+# Pinned: a moving tag would make releases pull a new base image unnoticed
+FROM nginx:1.31.9-alpine3.24
 
 COPY --from=build /app/dist /usr/share/nginx/html
 

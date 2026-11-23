@@ -12,7 +12,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 5s
+      start_period: 30s
+      start_interval: 1s # probe every second while starting (Docker 25+), then every 10s
 
   frontend:
     image: ghcr.io/moinahoi/planningpoker-client:${APP_VERSION:-latest}
@@ -25,4 +26,5 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 5s
+      start_period: 30s
+      start_interval: 1s # probe every second while starting (Docker 25+), then every 10s
